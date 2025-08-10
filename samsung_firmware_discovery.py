@@ -48,16 +48,17 @@ def get_firmware(model, csc):
                                     fixed_ap + update_type_new + bl_new + ul_new + year + month + rev
                                 )
 
-        # Generate CSC candidates
+        # Generate CSC candidates (with update type like AP/BP)
         csc_candidates = []
-        for bl_new in bl:
-            for ul_new in ul:
-                for year in yr:
-                    for month in mon:
-                        for rev in br:
-                            csc_candidates.append(
-                                fixed_csc + bl_new + ul_new + year + month + rev
-                            )
+        for update_type_new in up:
+            for bl_new in bl:
+                for ul_new in ul:
+                    for year in yr:
+                        for month in mon:
+                            for rev in br:
+                                csc_candidates.append(
+                                    fixed_csc + update_type_new + bl_new + ul_new + year + month + rev
+                                )
 
         # Generate BP candidates (same structure as AP)
         bp_candidates = []
@@ -165,8 +166,15 @@ def main():
                 for ap_new in ap_candidates:
                     ap_bl = ap_new[len(org_ap[:-6]) + 1]
                     ap_ul = ap_new[len(org_ap[:-6]) + 2]
-                    csc_bl = org_csc[len(org_csc[:-5])]
-                    csc_ul = org_csc[len(org_csc[:-5]) + 1]
+                    # For CSC, check if it has update type (6-char suffix) or not (5-char suffix)
+                    if len(org_csc) > len(org_csc.rstrip('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')[:]) + 5:
+                        # CSC has update type (6-char suffix)
+                        csc_bl = org_csc[len(org_csc[:-6]) + 1]
+                        csc_ul = org_csc[len(org_csc[:-6]) + 2]
+                    else:
+                        # CSC has no update type (5-char suffix)  
+                        csc_bl = org_csc[len(org_csc[:-5])]
+                        csc_ul = org_csc[len(org_csc[:-5]) + 1]
                     if org_bp:
                         bp_bl = org_bp[len(org_bp[:-6]) + 1]
                         bp_ul = org_bp[len(org_bp[:-6]) + 2]
@@ -276,7 +284,54 @@ def main():
                 saved_genap_csc = []
                 if not org_bp:
                     for ap_new in ap_candidates:
-                        saved_genap_csc.append(f"{ap_new}/{ap_new}")
+                        for csc_new in csc_candidates:
+                            # Extract components to check compatibility
+                            ap_bl = ap_new[len(fixed_ap) + 1]
+                            ap_ul = ap_new[len(fixed_ap) + 2] 
+                            ap_year = ap_new[len(fixed_ap) + 3]
+                            ap_month = ap_new[len(fixed_ap) + 4]
+                            ap_rev = ap_new[len(fixed_ap) + 5]
+                            
+                            csc_bl = csc_new[len(fixed_csc) + 1]
+                            csc_ul = csc_new[len(fixed_csc) + 2]
+                            csc_year = csc_new[len(fixed_csc) + 3] 
+                            csc_month = csc_new[len(fixed_csc) + 4]
+                            csc_rev = csc_new[len(fixed_csc) + 5]
+                            
+                            # Generate combinations with same year/month/rev but different bl/ul
+                            if ap_year == csc_year and ap_month == csc_month and ap_rev == csc_rev:
+                                saved_genap_csc.append(f"{ap_new}/{csc_new}")
+                
+                # --- gen_ap / gen_csc / gen_bp (full cross combinations) ---
+                saved_cross_combo = []
+                if org_bp:
+                    for ap_new in ap_candidates:
+                        for csc_new in csc_candidates:
+                            for bp_new in bp_candidates:
+                                # Extract components to check compatibility
+                                ap_bl = ap_new[len(fixed_ap) + 1]
+                                ap_ul = ap_new[len(fixed_ap) + 2] 
+                                ap_year = ap_new[len(fixed_ap) + 3]
+                                ap_month = ap_new[len(fixed_ap) + 4]
+                                ap_rev = ap_new[len(fixed_ap) + 5]
+                                
+                                csc_bl = csc_new[len(fixed_csc) + 1]
+                                csc_ul = csc_new[len(fixed_csc) + 2]
+                                csc_year = csc_new[len(fixed_csc) + 3] 
+                                csc_month = csc_new[len(fixed_csc) + 4]
+                                csc_rev = csc_new[len(fixed_csc) + 5]
+                                
+                                bp_bl = bp_new[len(fixed_bp) + 1]
+                                bp_ul = bp_new[len(fixed_bp) + 2]
+                                bp_year = bp_new[len(fixed_bp) + 3]
+                                bp_month = bp_new[len(fixed_bp) + 4] 
+                                bp_rev = bp_new[len(fixed_bp) + 5]
+                                
+                                # Generate combinations with same year/month/rev but different bl/ul
+                                if (ap_year == csc_year == bp_year and 
+                                    ap_month == csc_month == bp_month and 
+                                    ap_rev == csc_rev == bp_rev):
+                                    saved_cross_combo.append(f"{ap_new}/{csc_new}/{bp_new}")
 
                 # Beta-builds
                 saved_beta_aseries = []
@@ -373,6 +428,17 @@ def main():
                             if combo_md5 not in existing_hashes:
                                 new_matches.append(match_entry)
 
+                cross_combo_matches = []
+                if saved_cross_combo:
+                    for combo in saved_cross_combo:
+                        combo_md5 = hashlib.md5(combo.encode()).hexdigest()
+                        if combo_md5 in hashes and combo != official_firmware:
+                            cross_combo_matches.append(combo)
+                            match_entry = f"**Cross Combo Match:** {combo}"
+                            all_matches.append(match_entry)
+                            if combo_md5 not in existing_hashes:
+                                new_matches.append(match_entry)
+
                 # Save to text files
                 with open(f"output_candidates/{model}_{csc}_AP.txt", "w") as f_ap:
                     f_ap.write("\n".join(ap_matches))
@@ -406,6 +472,11 @@ def main():
                     with open(f"output_candidates/{model}_{csc}_Beta.txt", "w") as f_beta:
                         f_beta.write("\n".join(beta_matches))
                     print(f"✅ Saved Beta A-series combos ({len(saved_beta_aseries)} generated, {len(beta_matches)} matches)")
+
+                if saved_cross_combo:
+                    with open(f"output_candidates/{model}_{csc}_CrossCombo.txt", "w") as f_cross:
+                        f_cross.write("\n".join(cross_combo_matches))
+                    print(f"✅ Saved Cross-combination combos ({len(saved_cross_combo)} generated, {len(cross_combo_matches)} matches)")
 
                 # Save all matches to different output formats (only new ones)
                 if new_matches:
@@ -490,13 +561,15 @@ def main():
                     "GenAll_count": len(saved_genall),
                     "GenAP_CSC_count": len(saved_genap_csc),
                     "Beta_count": len(saved_beta_aseries),
+                    "CrossCombo_count": len(saved_cross_combo) if 'saved_cross_combo' in locals() else 0,
                     "AP_matches": len(ap_matches),
                     "CSC_matches": len(csc_matches),
                     "BP_matches": len(bp_matches),
                     "Zset_matches": len(zset_matches),
                     "GenAll_matches": len(genall_matches),
                     "GenAP_CSC_matches": len(genap_csc_matches),
-                    "Beta_matches": len(beta_matches)
+                    "Beta_matches": len(beta_matches),
+                    "CrossCombo_matches": len(cross_combo_matches) if 'cross_combo_matches' in locals() else 0
                 }
 
             except Exception as e:
